@@ -1,0 +1,110 @@
+{
+    "common": {
+        "name": "rainpoint",
+        "version": "0.1.0",
+        "news": {
+            "0.1.0": {
+                "en": "Initial release: HomGar / RainPoint cloud login, device discovery, valve control and sensor polling",
+                "de": "Erstes Release: HomGar-/RainPoint-Cloud-Login, Geräteerkennung, Ventilsteuerung und Sensor-Polling"
+            }
+        },
+        "titleLang": {
+            "en": "RainPoint irrigation",
+            "de": "RainPoint Bewässerung",
+            "ru": "RainPoint irrigation",
+            "pt": "RainPoint irrigation",
+            "nl": "RainPoint irrigation",
+            "fr": "RainPoint irrigation",
+            "it": "RainPoint irrigation",
+            "es": "RainPoint irrigation",
+            "pl": "RainPoint irrigation",
+            "uk": "RainPoint irrigation",
+            "zh-cn": "RainPoint irrigation"
+        },
+        "desc": {
+            "en": "Connect RainPoint / HomGar Smart+ irrigation valves and garden sensors to ioBroker via the cloud API",
+            "de": "RainPoint-/HomGar-Smart+-Bewässerungsventile und Gartensensoren über die Cloud-API in ioBroker einbinden",
+            "ru": "Connect RainPoint / HomGar Smart+ irrigation valves and garden sensors to ioBroker via the cloud API",
+            "pt": "Connect RainPoint / HomGar Smart+ irrigation valves and garden sensors to ioBroker via the cloud API",
+            "nl": "Connect RainPoint / HomGar Smart+ irrigation valves and garden sensors to ioBroker via the cloud API",
+            "fr": "Connect RainPoint / HomGar Smart+ irrigation valves and garden sensors to ioBroker via the cloud API",
+            "it": "Connect RainPoint / HomGar Smart+ irrigation valves and garden sensors to ioBroker via the cloud API",
+            "es": "Connect RainPoint / HomGar Smart+ irrigation valves and garden sensors to ioBroker via the cloud API",
+            "pl": "Connect RainPoint / HomGar Smart+ irrigation valves and garden sensors to ioBroker via the cloud API",
+            "uk": "Connect RainPoint / HomGar Smart+ irrigation valves and garden sensors to ioBroker via the cloud API",
+            "zh-cn": "Connect RainPoint / HomGar Smart+ irrigation valves and garden sensors to ioBroker via the cloud API"
+        },
+        "authors": ["Andreas"],
+        "keywords": ["rainpoint", "homgar", "irrigation", "garden", "watering"],
+        "licenseInformation": {
+            "license": "MIT",
+            "type": "free"
+        },
+        "platform": "Javascript/Node.js",
+        "mode": "daemon",
+        "icon": "rainpoint.svg",
+        "extIcon": "https://raw.githubusercontent.com/Kuebi7/ioBroker.rainpoint/main/admin/rainpoint.svg",
+        "readme": "https://github.com/Kuebi7/ioBroker.rainpoint/blob/main/README.md",
+        "loglevel": "info",
+        "tier": 3,
+        "adminUI": {
+            "config": "json"
+        },
+        "type": "garden",
+        "compact": true,
+        "enabled": true,
+        "connectionType": "cloud",
+        "dataSource": "poll",
+        "osDependencies": {
+            "linux": [],
+            "darwin": [],
+            "win32": []
+        },
+        "dependencies": [
+            {
+                "js-controller": ">=5.0.19"
+            }
+        ],
+        "globalDependencies": [
+            {
+                "admin": ">=6.17.12"
+            }
+        ]
+    },
+    "native": {
+        "appType": "rainpoint",
+        "email": "",
+        "password": "",
+        "areaCode": "49",
+        "region": "3",
+        "homeIndex": 0,
+        "pollInterval": 120,
+        "defaultDuration": 10
+    },
+    "encryptedNative": ["password"],
+    "protectedNative": ["password"],
+    "objects": [],
+    "instanceObjects": [
+        {
+            "_id": "info",
+            "type": "channel",
+            "common": {
+                "name": "Information"
+            },
+            "native": {}
+        },
+        {
+            "_id": "info.connection",
+            "type": "state",
+            "common": {
+                "role": "indicator.connected",
+                "name": "Connected to RainPoint cloud",
+                "type": "boolean",
+                "read": true,
+                "write": false,
+                "def": false
+            },
+            "native": {}
+        }
+    ]
+}

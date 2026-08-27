@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="RainPoint">
+  <rect width="256" height="256" rx="48" fill="#0B6E4F"/>
+  <path d="M128 36c0 0-58 78-58 118a58 58 0 1 0 116 0C186 114 128 36 128 36z" fill="#E8F7FF"/>
+  <path d="M128 86c-10 16-22 36-22 58a22 22 0 0 0 44 0c0-22-12-42-22-58z" fill="#4FC3F7"/>
+  <circle cx="188" cy="188" r="28" fill="#F4D35E"/>
+  <path d="M176 188h24M188 176v24" stroke="#0B6E4F" stroke-width="6" stroke-linecap="round"/>
+</svg>

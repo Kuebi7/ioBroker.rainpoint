@@ -1,0 +1,465 @@
+import * as utils from '@iobroker/adapter-core';
+import { HomgarClient } from './lib/api';
+import { isValveKind, sanitizeId } from './lib/devices';
+import type { DeviceInfo, DeviceStatus } from './lib/types';
+
+interface ZoneTarget {
+    deviceId: string;
+    port: number;
+    prefix: string;
+}
+
+class Rainpoint extends utils.Adapter {
+    private client?: HomgarClient;
+    private pollTimer?: ioBroker.Timeout;
+    private remainingTimer?: ioBroker.Timeout;
+    private readonly devices = new Map<string, DeviceInfo>();
+    private readonly zoneTargets = new Map<string, ZoneTarget>();
+    private commandInFlight = false;
+    private unloading = false;
+
+    public constructor(options: Partial<utils.AdapterOptions> = {}) {
+        super({
+            ...options,
+            name: 'rainpoint',
+        });
+        this.on('ready', this.onReady.bind(this));
+        this.on('stateChange', this.onStateChange.bind(this));
+        this.on('unload', this.onUnload.bind(this));
+    }
+
+    private async onReady(): Promise<void> {
+        await this.setState('info.connection', false, true);
+
+        if (!this.config.email || !this.config.password) {
+            this.log.error('Please set email and password in the adapter configuration');
+            return;
+        }
+
+        this.log.warn(
+            'RainPoint allows only one cloud session per account. Use a dedicated member account so the phone app stays logged in.',
+        );
+
+        this.client = new HomgarClient(
+            {
+                email: this.config.email,
+                password: this.config.password,
+                areaCode: String(this.config.areaCode || '49').replace(/^\+/, ''),
+                region: String(this.config.region || '3'),
+                appType: this.config.appType === 'homgar' ? 'homgar' : 'rainpoint',
+            },
+            this.log,
+        );
+
+        try {
+            await this.client.login();
+            const homes = await this.client.getHomes();
+            if (!homes.length) {
+                throw new Error('No homes found for this account');
+            }
+            const home = homes[Math.min(Math.max(this.config.homeIndex || 0, 0), homes.length - 1)];
+            this.client.setHome(home.id);
+            this.log.info(`Using home "${home.name}" (${home.id})`);
+            await this.ensureInfoStates();
+            await this.setStateAsync('info.homeId', { val: home.id, ack: true });
+            await this.setStateAsync('info.homeName', { val: home.name, ack: true });
+            await this.setState('info.connection', true, true);
+            await this.poll();
+            this.schedulePoll();
+            this.scheduleRemainingCountdown();
+            this.subscribeStates('devices.*');
+        } catch (error) {
+            this.log.error(`Startup failed: ${(error as Error).message}`);
+            await this.setState('info.connection', false, true);
+            this.schedulePoll(60);
+        }
+    }
+
+    private async ensureInfoStates(): Promise<void> {
+        await this.extendObjectAsync('info.homeId', {
+            type: 'state',
+            common: { name: 'Home ID', type: 'string', role: 'text', read: true, write: false },
+            native: {},
+        });
+        await this.extendObjectAsync('info.homeName', {
+            type: 'state',
+            common: { name: 'Home name', type: 'string', role: 'text', read: true, write: false },
+            native: {},
+        });
+        await this.extendObjectAsync('info.lastUpdate', {
+            type: 'state',
+            common: {
+                name: 'Last successful cloud update',
+                type: 'number',
+                role: 'value.time',
+                read: true,
+                write: false,
+            },
+            native: {},
+        });
+        await this.extendObjectAsync('info.lastError', {
+            type: 'state',
+            common: { name: 'Last error', type: 'string', role: 'text', read: true, write: false },
+            native: {},
+        });
+    }
+
+    private schedulePoll(delaySeconds?: number): void {
+        if (this.pollTimer) {
+            this.clearTimeout(this.pollTimer);
+        }
+        const seconds = delaySeconds ?? Math.max(this.config.pollInterval || 120, 30);
+        this.pollTimer = this.setTimeout(() => {
+            void this.poll()
+                .catch(error => this.log.error(`Poll failed: ${(error as Error).message}`))
+                .finally(() => {
+                    if (!this.unloading) {
+                        this.schedulePoll();
+                    }
+                });
+        }, seconds * 1000);
+    }
+
+    private scheduleRemainingCountdown(): void {
+        if (this.remainingTimer) {
+            this.clearTimeout(this.remainingTimer);
+        }
+        this.remainingTimer = this.setTimeout(() => {
+            void this.tickRemaining().finally(() => {
+                if (!this.unloading) {
+                    this.scheduleRemainingCountdown();
+                }
+            });
+        }, 1000);
+    }
+
+    private async tickRemaining(): Promise<void> {
+        for (const target of this.zoneTargets.values()) {
+            const remainingId = `${target.prefix}.remaining`;
+            const onId = `${target.prefix}.on`;
+            const remainingState = await this.getStateAsync(remainingId);
+            if (typeof remainingState?.val !== 'number' || remainingState.val <= 0) {
+                continue;
+            }
+            const next = remainingState.val - 1;
+            await this.setState(remainingId, next, true);
+            if (next <= 0) {
+                await this.setState(onId, false, true);
+            }
+        }
+    }
+
+    private async poll(): Promise<void> {
+        if (!this.client || this.commandInFlight) {
+            return;
+        }
+        try {
+            const devices = await this.client.getDevices();
+            this.devices.clear();
+            for (const device of devices) {
+                this.devices.set(device.id, device);
+                await this.syncDeviceObjects(device);
+            }
+            const statuses = await this.client.getDeviceStatuses([...this.devices.keys()]);
+            for (const [id, status] of statuses) {
+                await this.applyStatus(id, status);
+            }
+            await this.setState('info.connection', true, true);
+            await this.setState('info.lastUpdate', Date.now(), true);
+            await this.setState('info.lastError', '', true);
+        } catch (error) {
+            await this.setState('info.connection', false, true);
+            await this.setState('info.lastError', (error as Error).message, true);
+            throw error;
+        }
+    }
+
+    private async syncDeviceObjects(device: DeviceInfo): Promise<void> {
+        const prefix = `devices.${sanitizeId(device.id)}`;
+        await this.extendObjectAsync(prefix, {
+            type: 'device',
+            common: { name: device.name },
+            native: { id: device.id, model: device.model, kind: device.kind },
+        });
+        await this.setStateValue(`${prefix}.name`, device.name, 'text', 'Name');
+        await this.setStateValue(`${prefix}.model`, device.model, 'text', 'Model');
+        await this.setStateValue(`${prefix}.online`, device.online, 'indicator.reachable', 'Online', 'boolean');
+        await this.setStateValue(`${prefix}.kind`, device.kind, 'text', 'Device kind');
+        if (device.firmware) {
+            await this.setStateValue(`${prefix}.firmware`, device.firmware, 'text', 'Firmware');
+        }
+
+        if (isValveKind(device.kind)) {
+            await this.extendObjectAsync(`${prefix}.zones`, {
+                type: 'channel',
+                common: { name: 'Zones' },
+                native: {},
+            });
+            for (let port = 1; port <= device.portNumber; port++) {
+                await this.syncZoneObjects(device, prefix, port);
+            }
+        }
+    }
+
+    private async syncZoneObjects(device: DeviceInfo, devicePrefix: string, port: number): Promise<void> {
+        const prefix = `${devicePrefix}.zones.${port}`;
+        const zoneName = device.zoneNames[port - 1] ?? `Zone ${port}`;
+        await this.extendObjectAsync(prefix, {
+            type: 'channel',
+            common: { name: zoneName },
+            native: { deviceId: device.id, port },
+        });
+        await this.setStateValue(`${prefix}.name`, zoneName, 'text', 'Zone name');
+        await this.extendObjectAsync(`${prefix}.on`, {
+            type: 'state',
+            common: {
+                name: `${zoneName} on`,
+                type: 'boolean',
+                role: 'switch',
+                read: true,
+                write: true,
+                def: false,
+            },
+            native: { deviceId: device.id, port },
+        });
+        await this.extendObjectAsync(`${prefix}.duration`, {
+            type: 'state',
+            common: {
+                name: `${zoneName} duration`,
+                type: 'number',
+                role: 'value',
+                read: true,
+                write: true,
+                unit: 'min',
+                min: 1,
+                max: 180,
+                def: this.config.defaultDuration || 10,
+            },
+            native: { deviceId: device.id, port },
+        });
+        await this.extendObjectAsync(`${prefix}.remaining`, {
+            type: 'state',
+            common: {
+                name: `${zoneName} remaining`,
+                type: 'number',
+                role: 'value.interval',
+                read: true,
+                write: false,
+                unit: 's',
+                def: 0,
+            },
+            native: {},
+        });
+        this.zoneTargets.set(`${this.namespace}.${prefix}.on`, { deviceId: device.id, port, prefix });
+        const durationState = await this.getStateAsync(`${prefix}.duration`);
+        if (durationState?.val == null) {
+            await this.setState(`${prefix}.duration`, this.config.defaultDuration || 10, true);
+        }
+    }
+
+    private async applyStatus(deviceId: string, status: DeviceStatus): Promise<void> {
+        const device = this.devices.get(deviceId);
+        if (!device) {
+            return;
+        }
+        const prefix = `devices.${sanitizeId(deviceId)}`;
+        await this.setState(`${prefix}.online`, status.online, true);
+        if (status.moisture !== null) {
+            await this.setStateValue(
+                `${prefix}.moisture`,
+                status.moisture,
+                'value.moisture',
+                'Soil moisture',
+                'number',
+                '%',
+            );
+        }
+        if (status.temperature !== null) {
+            await this.setStateValue(
+                `${prefix}.temperature`,
+                status.temperature,
+                'value.temperature',
+                'Temperature',
+                'number',
+                '°C',
+            );
+        }
+        if (status.humidity !== null) {
+            await this.setStateValue(
+                `${prefix}.humidity`,
+                status.humidity,
+                'value.humidity',
+                'Humidity',
+                'number',
+                '%',
+            );
+        }
+        if (status.battery !== null) {
+            await this.setStateValue(`${prefix}.battery`, status.battery, 'value.battery', 'Battery', 'number', '%');
+        }
+        if (status.illuminance !== null) {
+            await this.setStateValue(
+                `${prefix}.illuminance`,
+                status.illuminance,
+                'value.brightness',
+                'Illuminance',
+                'number',
+                'lx',
+            );
+        }
+        if (status.pressure !== null) {
+            await this.setStateValue(
+                `${prefix}.pressure`,
+                status.pressure,
+                'value.pressure',
+                'Pressure',
+                'number',
+                'Pa',
+            );
+        }
+        if (status.rssi !== null) {
+            await this.setStateValue(`${prefix}.rssi`, status.rssi, 'value', 'RF RSSI', 'number', 'dBm');
+        }
+        if (status.rainTotalMm !== null || status.rainHourMm !== null) {
+            await this.extendObjectAsync(`${prefix}.rain`, {
+                type: 'channel',
+                common: { name: 'Rain' },
+                native: {},
+            });
+            if (status.rainTotalMm !== null) {
+                await this.setStateValue(
+                    `${prefix}.rain.total`,
+                    status.rainTotalMm,
+                    'value',
+                    'Rain total',
+                    'number',
+                    'mm',
+                );
+            }
+            if (status.rainHourMm !== null) {
+                await this.setStateValue(
+                    `${prefix}.rain.lastHour`,
+                    status.rainHourMm,
+                    'value',
+                    'Rain last hour',
+                    'number',
+                    'mm',
+                );
+            }
+            if (status.rainDailyMm !== null) {
+                await this.setStateValue(
+                    `${prefix}.rain.last24h`,
+                    status.rainDailyMm,
+                    'value',
+                    'Rain last 24h',
+                    'number',
+                    'mm',
+                );
+            }
+            if (status.rainWeekMm !== null) {
+                await this.setStateValue(
+                    `${prefix}.rain.last7d`,
+                    status.rainWeekMm,
+                    'value',
+                    'Rain last 7 days',
+                    'number',
+                    'mm',
+                );
+            }
+        }
+        for (const zone of status.zones) {
+            const zonePrefix = `${prefix}.zones.${zone.port}`;
+            await this.setState(`${zonePrefix}.on`, zone.isOn, true);
+            await this.setState(`${zonePrefix}.remaining`, zone.remainingSeconds, true);
+            await this.setState(`${zonePrefix}.name`, zone.name, true);
+        }
+    }
+
+    private async setStateValue(
+        id: string,
+        value: ioBroker.StateValue,
+        role: string,
+        name: string,
+        type: ioBroker.CommonType = 'string',
+        unit?: string,
+    ): Promise<void> {
+        await this.extendObjectAsync(id, {
+            type: 'state',
+            common: {
+                name,
+                type,
+                role,
+                read: true,
+                write: false,
+                ...(unit ? { unit } : {}),
+            },
+            native: {},
+        });
+        await this.setState(id, value, true);
+    }
+
+    private async onStateChange(id: string, state: ioBroker.State | null | undefined): Promise<void> {
+        if (!state || state.ack || !this.client) {
+            return;
+        }
+        const target = this.zoneTargets.get(id);
+        if (!target) {
+            if (id.endsWith('.duration')) {
+                await this.setState(id, state.val, true);
+            }
+            return;
+        }
+        if (typeof state.val !== 'boolean') {
+            return;
+        }
+
+        this.commandInFlight = true;
+        try {
+            if (state.val) {
+                const durationState = await this.getStateAsync(`${target.prefix}.duration`);
+                const minutes =
+                    typeof durationState?.val === 'number' && durationState.val > 0
+                        ? durationState.val
+                        : this.config.defaultDuration || 10;
+                const seconds = Math.round(minutes * 60);
+                this.log.info(`Opening ${target.deviceId} zone ${target.port} for ${minutes} min`);
+                await this.client.turnZoneOn(target.deviceId, target.port, seconds);
+                await this.setState(`${target.prefix}.on`, true, true);
+                await this.setState(`${target.prefix}.remaining`, seconds, true);
+            } else {
+                this.log.info(`Closing ${target.deviceId} zone ${target.port}`);
+                await this.client.turnZoneOff(target.deviceId, target.port);
+                await this.setState(`${target.prefix}.on`, false, true);
+                await this.setState(`${target.prefix}.remaining`, 0, true);
+            }
+        } catch (error) {
+            this.log.error(`Valve command failed: ${(error as Error).message}`);
+            await this.setState('info.lastError', (error as Error).message, true);
+            await this.setState(`${target.prefix}.on`, !state.val, true);
+        } finally {
+            this.commandInFlight = false;
+        }
+    }
+
+    private onUnload(callback: () => void): void {
+        this.unloading = true;
+        try {
+            if (this.pollTimer) {
+                this.clearTimeout(this.pollTimer);
+            }
+            if (this.remainingTimer) {
+                this.clearTimeout(this.remainingTimer);
+            }
+            void this.setState('info.connection', false, true);
+            callback();
+        } catch {
+            callback();
+        }
+    }
+}
+
+if (require.main !== module) {
+    module.exports = (options: Partial<utils.AdapterOptions> | undefined) => new Rainpoint(options);
+} else {
+    (() => new Rainpoint())();
+}

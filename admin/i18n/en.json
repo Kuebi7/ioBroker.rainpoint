@@ -1,0 +1,14 @@
+{
+    "RainPoint WLAN Gateway": "RainPoint WLAN Gateway",
+    "sessionHint": "For the RainPoint app with a Wi-Fi gateway. The cloud allows only one active session per account. Create a second account and invite it as a home member so the phone app stays logged in.",
+    "appType": "App",
+    "areaCode": "Country calling code",
+    "areaCodeHelp": "Phone country code of the account, e.g. 49 for Germany, 43 for Austria, 41 for Switzerland, 1 for USA.",
+    "region": "Cloud region",
+    "email": "Email",
+    "password": "Password",
+    "homeIndex": "Home index",
+    "homeIndexHelp": "0 = first home in the account. Increase if you have several homes.",
+    "pollInterval": "Poll interval (seconds)",
+    "defaultDuration": "Default watering duration (minutes)"
+}

@@ -1,0 +1,110 @@
+{
+    "type": "panel",
+    "i18n": true,
+    "items": {
+        "header": {
+            "type": "header",
+            "text": "RainPoint WLAN Gateway",
+            "size": 2
+        },
+        "sessionHint": {
+            "type": "staticText",
+            "newLine": true,
+            "text": "sessionHint",
+            "xs": 12,
+            "sm": 12,
+            "md": 12,
+            "lg": 12
+        },
+        "appType": {
+            "type": "select",
+            "label": "appType",
+            "newLine": true,
+            "default": "rainpoint",
+            "options": [
+                { "value": "rainpoint", "label": "RainPoint (WLAN Gateway)" },
+                { "value": "homgar", "label": "HomGar" }
+            ],
+            "xs": 12,
+            "sm": 12,
+            "md": 6,
+            "lg": 4
+        },
+        "areaCode": {
+            "type": "text",
+            "label": "areaCode",
+            "help": "areaCodeHelp",
+            "default": "49",
+            "xs": 12,
+            "sm": 12,
+            "md": 6,
+            "lg": 4
+        },
+        "region": {
+            "type": "select",
+            "label": "region",
+            "default": "3",
+            "options": [
+                { "value": "3", "label": "International" },
+                { "value": "0", "label": "China" }
+            ],
+            "xs": 12,
+            "sm": 12,
+            "md": 6,
+            "lg": 4
+        },
+        "email": {
+            "type": "text",
+            "label": "email",
+            "newLine": true,
+            "xs": 12,
+            "sm": 12,
+            "md": 6,
+            "lg": 4
+        },
+        "password": {
+            "type": "password",
+            "label": "password",
+            "visible": true,
+            "xs": 12,
+            "sm": 12,
+            "md": 6,
+            "lg": 4
+        },
+        "homeIndex": {
+            "type": "number",
+            "label": "homeIndex",
+            "help": "homeIndexHelp",
+            "min": 0,
+            "max": 20,
+            "default": 0,
+            "newLine": true,
+            "xs": 12,
+            "sm": 12,
+            "md": 6,
+            "lg": 4
+        },
+        "pollInterval": {
+            "type": "number",
+            "label": "pollInterval",
+            "min": 30,
+            "max": 600,
+            "default": 120,
+            "xs": 12,
+            "sm": 12,
+            "md": 6,
+            "lg": 4
+        },
+        "defaultDuration": {
+            "type": "number",
+            "label": "defaultDuration",
+            "min": 1,
+            "max": 120,
+            "default": 10,
+            "xs": 12,
+            "sm": 12,
+            "md": 6,
+            "lg": 4
+        }
+    }
+}

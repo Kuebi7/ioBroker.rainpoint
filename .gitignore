@@ -1,0 +1,16 @@
+.*/
+!.vscode/
+!.github/
+
+*.code-workspace
+node_modules
+nbproject
+
+iobroker.*.tgz
+Thumbs.db
+.commitinfo
+coverage
+
+admin/i18n/flat.txt
+admin/i18n/*/flat.txt
+.env

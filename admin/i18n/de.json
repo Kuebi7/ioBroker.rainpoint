@@ -1,0 +1,14 @@
+{
+    "RainPoint WLAN Gateway": "RainPoint WLAN Gateway",
+    "sessionHint": "Für die RainPoint-App mit WLAN-Gateway. Die Cloud erlaubt nur eine aktive Sitzung pro Konto. Zweites Konto anlegen und als Mitglied ins Home einladen, damit die Handy-App eingeloggt bleibt.",
+    "appType": "App",
+    "areaCode": "Ländervorwahl",
+    "areaCodeHelp": "Telefon-Ländervorwahl des Kontos, z. B. 49 für Deutschland, 43 für Österreich, 41 für die Schweiz, 1 für die USA.",
+    "region": "Cloud-Region",
+    "email": "E-Mail",
+    "password": "Passwort",
+    "homeIndex": "Home-Index",
+    "homeIndexHelp": "0 = erstes Home im Konto. Erhöhen, wenn du mehrere Homes hast.",
+    "pollInterval": "Abfrageintervall (Sekunden)",
+    "defaultDuration": "Standard-Bewässerungsdauer (Minuten)"
+}
