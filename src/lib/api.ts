@@ -19,6 +19,8 @@ const USER_AGENT = 'okhttp/4.9.3';
 const CONTROL_MODE_CLOSE = 0;
 const CONTROL_MODE_OPEN = 1;
 const REAUTH_CODES = new Set([1001, 1004]);
+const THROTTLE_CODE = 9993;
+const LOGIN_COOLDOWN_SECONDS = 180;
 
 interface BaseResponse<T> {
     code: number;
@@ -86,6 +88,12 @@ function md5(input: string): string {
     return crypto.createHash('md5').update(input, 'utf8').digest('hex');
 }
 
+function sleep(ms: number): Promise<void> {
+    return new Promise(resolve => {
+        setTimeout(resolve, ms);
+    });
+}
+
 function asString(value: string | number | undefined): string {
     return value == null ? '' : String(value);
 }
@@ -113,6 +121,7 @@ export class HomgarClient {
     private hid = '';
     private readonly baseUrl: string;
     private appCode: string;
+    private loginCooldownUntil = 0;
     private readonly deviceCache = new Map<string, DeviceInfo>();
 
     public constructor(
@@ -124,6 +133,7 @@ export class HomgarClient {
     }
 
     public async login(): Promise<void> {
+        this.assertNotThrottled();
         const email = normalizeEmail(this.config.email);
         const password = normalizePassword(this.config.password);
         const areaCode = normalizeAreaCode(this.config.areaCode);
@@ -139,7 +149,8 @@ export class HomgarClient {
         const preferred: AppType = this.config.appType === 'homgar' ? 'homgar' : 'rainpoint';
         const order: AppType[] = preferred === 'homgar' ? ['homgar', 'rainpoint'] : ['rainpoint', 'homgar'];
 
-        for (const appType of order) {
+        for (let i = 0; i < order.length; i++) {
+            const appType = order[i];
             this.appCode = appCodeForType(appType);
             try {
                 this.log.info(`Logging in as ${email} (areaCode=${areaCode}, app=${appType}, appCode=${this.appCode})`);
@@ -151,9 +162,16 @@ export class HomgarClient {
                 }
                 return;
             } catch (error) {
-                if (error instanceof HomgarApiError && error.code === 2001) {
+                if (error instanceof HomgarApiError && error.code === THROTTLE_CODE) {
+                    throw error;
+                }
+                if (error instanceof HomgarApiError && error.code === 2001 && i < order.length - 1) {
                     this.log.warn(`Login rejected for ${appType} (appCode ${this.appCode}): ${error.message}`);
+                    await sleep(1500);
                     continue;
+                }
+                if (error instanceof HomgarApiError && error.code === 2001) {
+                    break;
                 }
                 throw error;
             }
@@ -468,6 +486,7 @@ export class HomgarClient {
     }
 
     private async ensureAuthenticated(): Promise<void> {
+        this.assertNotThrottled();
         if (Date.now() >= this.tokenExpired - 5 * 60 * 1000) {
             await this.refreshAccessToken();
         }
@@ -489,6 +508,25 @@ export class HomgarClient {
             this.log.warn(`Token refresh failed (${(error as Error).message}), logging in again`);
             await this.login();
         }
+    }
+
+    private assertNotThrottled(): void {
+        const remainingMs = this.loginCooldownUntil - Date.now();
+        if (remainingMs > 0) {
+            const seconds = Math.ceil(remainingMs / 1000);
+            throw new HomgarApiError(
+                THROTTLE_CODE,
+                `operate too frequently — wait ${seconds}s before the next login`,
+                seconds,
+            );
+        }
+    }
+
+    private armLoginCooldown(): void {
+        this.loginCooldownUntil = Date.now() + LOGIN_COOLDOWN_SECONDS * 1000;
+        this.log.warn(
+            `RainPoint cloud rate limit (9993). Cooling down ${LOGIN_COOLDOWN_SECONDS}s — do not restart the adapter.`,
+        );
     }
 
     private async request<T>(
@@ -519,6 +557,14 @@ export class HomgarClient {
         this.log.debug(`${method} ${url.toString()}`);
 
         const parsed = await this.httpsJson<T>(method, url, headers, payload);
+        if (parsed.code === THROTTLE_CODE) {
+            this.armLoginCooldown();
+            throw new HomgarApiError(
+                THROTTLE_CODE,
+                'operate too frequently — wait before the next login',
+                LOGIN_COOLDOWN_SECONDS,
+            );
+        }
         if (parsed.code !== 0) {
             if (REAUTH_CODES.has(parsed.code) && requireAuth && !retried) {
                 this.log.warn(`API returned ${parsed.code} (${parsed.msg}) — re-authenticating`);
@@ -552,6 +598,15 @@ export class HomgarClient {
                     const chunks: Buffer[] = [];
                     res.on('data', chunk => chunks.push(chunk as Buffer));
                     res.on('end', () => {
+                        if (res.statusCode === 403) {
+                            resolve({
+                                code: THROTTLE_CODE,
+                                msg: 'operate too frequently',
+                                data: null as T,
+                                ts: Date.now(),
+                            });
+                            return;
+                        }
                         const data = Buffer.concat(chunks).toString('utf8');
                         try {
                             resolve(JSON.parse(data) as BaseResponse<T>);

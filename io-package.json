@@ -1,8 +1,12 @@
 {
     "common": {
         "name": "rainpoint",
-        "version": "0.1.1",
+        "version": "0.1.2",
         "news": {
+            "0.1.2": {
+                "en": "Respect cloud rate limit 9993: wait before retrying login instead of polling every minute",
+                "de": "Cloud-Limit 9993 beachten: vor dem nächsten Login warten, statt jede Minute neu zu versuchen"
+            },
             "0.1.1": {
                 "en": "Fix cloud login: retry RainPoint and HomGar apps, use the same API host as Home Assistant, clearer error 2001 hints",
                 "de": "Login-Fix: RainPoint- und HomGar-App werden nacheinander versucht, gleicher API-Host wie Home Assistant, klarere Hinweise bei Fehler 2001"

@@ -23,10 +23,12 @@ __export(types_exports, {
 module.exports = __toCommonJS(types_exports);
 class HomgarApiError extends Error {
   code;
-  constructor(code, message) {
+  retryAfterSeconds;
+  constructor(code, message, retryAfterSeconds) {
     super(`API error ${code}: ${message}`);
     this.name = "HomgarApiError";
     this.code = code;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 // Annotate the CommonJS export names for ESM import in node:

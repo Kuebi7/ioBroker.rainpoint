@@ -1,7 +1,7 @@
 import * as utils from '@iobroker/adapter-core';
 import { HomgarClient } from './lib/api';
 import { isValveKind, sanitizeId } from './lib/devices';
-import type { DeviceInfo, DeviceStatus } from './lib/types';
+import { HomgarApiError, type DeviceInfo, type DeviceStatus } from './lib/types';
 
 interface ZoneTarget {
     deviceId: string;
@@ -17,6 +17,7 @@ class Rainpoint extends utils.Adapter {
     private readonly zoneTargets = new Map<string, ZoneTarget>();
     private commandInFlight = false;
     private unloading = false;
+    private statesSubscribed = false;
 
     public constructor(options: Partial<utils.AdapterOptions> = {}) {
         super({
@@ -51,33 +52,7 @@ class Rainpoint extends utils.Adapter {
             this.log,
         );
 
-        try {
-            await this.client.login();
-            const homes = await this.client.getHomes();
-            if (!homes.length) {
-                throw new Error('No homes found for this account');
-            }
-            const home = homes[Math.min(Math.max(this.config.homeIndex || 0, 0), homes.length - 1)];
-            this.client.setHome(home.id);
-            this.log.info(`Using home "${home.name}" (${home.id})`);
-            await this.ensureInfoStates();
-            await this.setStateAsync('info.homeId', { val: home.id, ack: true });
-            await this.setStateAsync('info.homeName', { val: home.name, ack: true });
-            await this.setState('info.connection', true, true);
-            await this.poll();
-            this.schedulePoll();
-            this.scheduleRemainingCountdown();
-            this.subscribeStates('devices.*');
-        } catch (error) {
-            this.log.error(`Startup failed: ${(error as Error).message}`);
-            if ((error as { code?: number }).code === 2001) {
-                this.log.error(
-                    'Tip: re-enter password, set the country code of the RainPoint account (not +49), and confirm the phone app is RainPoint Home/HomGar — not RainPoint-TY.',
-                );
-            }
-            await this.setState('info.connection', false, true);
-            this.schedulePoll(60);
-        }
+        await this.connect();
     }
 
     private async ensureInfoStates(): Promise<void> {
@@ -109,6 +84,64 @@ class Rainpoint extends utils.Adapter {
         });
     }
 
+    private async connect(): Promise<void> {
+        if (!this.client) {
+            return;
+        }
+        try {
+            await this.client.login();
+            const homes = await this.client.getHomes();
+            if (!homes.length) {
+                throw new Error('No homes found for this account');
+            }
+            const home = homes[Math.min(Math.max(this.config.homeIndex || 0, 0), homes.length - 1)];
+            this.client.setHome(home.id);
+            this.log.info(`Using home "${home.name}" (${home.id})`);
+            await this.ensureInfoStates();
+            await this.setStateAsync('info.homeId', { val: home.id, ack: true });
+            await this.setStateAsync('info.homeName', { val: home.name, ack: true });
+            await this.setState('info.connection', true, true);
+            await this.poll();
+            this.schedulePoll();
+            this.scheduleRemainingCountdown();
+            if (!this.statesSubscribed) {
+                this.subscribeStates('devices.*');
+                this.statesSubscribed = true;
+            }
+        } catch (error) {
+            const message = (error as Error).message;
+            this.log.error(`Startup failed: ${message}`);
+            if (error instanceof HomgarApiError && error.code === 2001) {
+                this.log.error(
+                    'Tip: re-enter password, set the country code of the RainPoint account, and confirm the phone app is RainPoint Home/HomGar — not RainPoint-TY.',
+                );
+            }
+            if (error instanceof HomgarApiError && error.code === 9993) {
+                this.log.warn('Do not restart the instance now. The cloud blocks further logins for a few minutes.');
+            }
+            await this.setState('info.connection', false, true);
+            await this.ensureInfoStates();
+            await this.setState('info.lastError', message, true);
+            let waitSeconds = 60;
+            if (error instanceof HomgarApiError && error.code === 9993) {
+                waitSeconds = error.retryAfterSeconds ?? 180;
+            } else if (error instanceof HomgarApiError && error.code === 2001) {
+                waitSeconds = 600;
+            }
+            this.log.info(`Retrying login in ${waitSeconds} seconds`);
+            this.scheduleReconnect(waitSeconds);
+        }
+    }
+
+    private scheduleReconnect(delaySeconds: number): void {
+        if (this.pollTimer) {
+            this.clearTimeout(this.pollTimer);
+        }
+        this.pollTimer = this.setTimeout(() => {
+            void this.connect();
+        }, delaySeconds * 1000);
+    }
+
     private schedulePoll(delaySeconds?: number): void {
         if (this.pollTimer) {
             this.clearTimeout(this.pollTimer);
@@ -116,11 +149,23 @@ class Rainpoint extends utils.Adapter {
         const seconds = delaySeconds ?? Math.max(this.config.pollInterval || 120, 30);
         this.pollTimer = this.setTimeout(() => {
             void this.poll()
-                .catch(error => this.log.error(`Poll failed: ${(error as Error).message}`))
-                .finally(() => {
+                .then(() => {
                     if (!this.unloading) {
                         this.schedulePoll();
                     }
+                })
+                .catch(error => {
+                    this.log.error(`Poll failed: ${(error as Error).message}`);
+                    if (this.unloading) {
+                        return;
+                    }
+                    if (error instanceof HomgarApiError && error.code === 9993) {
+                        const waitSeconds = error.retryAfterSeconds ?? 180;
+                        this.log.info(`Waiting ${waitSeconds} seconds after cloud rate limit`);
+                        this.schedulePoll(waitSeconds);
+                        return;
+                    }
+                    this.schedulePoll();
                 });
         }, seconds * 1000);
     }

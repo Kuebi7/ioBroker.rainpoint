@@ -43,8 +43,15 @@ const USER_AGENT = "okhttp/4.9.3";
 const CONTROL_MODE_CLOSE = 0;
 const CONTROL_MODE_OPEN = 1;
 const REAUTH_CODES = /* @__PURE__ */ new Set([1001, 1004]);
+const THROTTLE_CODE = 9993;
+const LOGIN_COOLDOWN_SECONDS = 180;
 function md5(input) {
   return import_node_crypto.default.createHash("md5").update(input, "utf8").digest("hex");
+}
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 function asString(value) {
   return value == null ? "" : String(value);
@@ -77,8 +84,10 @@ class HomgarClient {
   hid = "";
   baseUrl;
   appCode;
+  loginCooldownUntil = 0;
   deviceCache = /* @__PURE__ */ new Map();
   async login() {
+    this.assertNotThrottled();
     const email = (0, import_credentials.normalizeEmail)(this.config.email);
     const password = (0, import_credentials.normalizePassword)(this.config.password);
     const areaCode = (0, import_credentials.normalizeAreaCode)(this.config.areaCode);
@@ -92,7 +101,8 @@ class HomgarClient {
     }
     const preferred = this.config.appType === "homgar" ? "homgar" : "rainpoint";
     const order = preferred === "homgar" ? ["homgar", "rainpoint"] : ["rainpoint", "homgar"];
-    for (const appType of order) {
+    for (let i = 0; i < order.length; i++) {
+      const appType = order[i];
       this.appCode = (0, import_credentials.appCodeForType)(appType);
       try {
         this.log.info(`Logging in as ${email} (areaCode=${areaCode}, app=${appType}, appCode=${this.appCode})`);
@@ -104,9 +114,16 @@ class HomgarClient {
         }
         return;
       } catch (error) {
-        if (error instanceof import_types.HomgarApiError && error.code === 2001) {
+        if (error instanceof import_types.HomgarApiError && error.code === THROTTLE_CODE) {
+          throw error;
+        }
+        if (error instanceof import_types.HomgarApiError && error.code === 2001 && i < order.length - 1) {
           this.log.warn(`Login rejected for ${appType} (appCode ${this.appCode}): ${error.message}`);
+          await sleep(1500);
           continue;
+        }
+        if (error instanceof import_types.HomgarApiError && error.code === 2001) {
+          break;
         }
         throw error;
       }
@@ -389,6 +406,7 @@ class HomgarClient {
     return response.data;
   }
   async ensureAuthenticated() {
+    this.assertNotThrottled();
     if (Date.now() >= this.tokenExpired - 5 * 60 * 1e3) {
       await this.refreshAccessToken();
     }
@@ -410,6 +428,23 @@ class HomgarClient {
       await this.login();
     }
   }
+  assertNotThrottled() {
+    const remainingMs = this.loginCooldownUntil - Date.now();
+    if (remainingMs > 0) {
+      const seconds = Math.ceil(remainingMs / 1e3);
+      throw new import_types.HomgarApiError(
+        THROTTLE_CODE,
+        `operate too frequently \u2014 wait ${seconds}s before the next login`,
+        seconds
+      );
+    }
+  }
+  armLoginCooldown() {
+    this.loginCooldownUntil = Date.now() + LOGIN_COOLDOWN_SECONDS * 1e3;
+    this.log.warn(
+      `RainPoint cloud rate limit (9993). Cooling down ${LOGIN_COOLDOWN_SECONDS}s \u2014 do not restart the adapter.`
+    );
+  }
   async request(method, path, body, requireAuth = true, retried = false) {
     if (requireAuth) {
       await this.ensureAuthenticated();
@@ -429,6 +464,14 @@ class HomgarClient {
     const payload = body ? JSON.stringify(body) : void 0;
     this.log.debug(`${method} ${url.toString()}`);
     const parsed = await this.httpsJson(method, url, headers, payload);
+    if (parsed.code === THROTTLE_CODE) {
+      this.armLoginCooldown();
+      throw new import_types.HomgarApiError(
+        THROTTLE_CODE,
+        "operate too frequently \u2014 wait before the next login",
+        LOGIN_COOLDOWN_SECONDS
+      );
+    }
     if (parsed.code !== 0) {
       if (REAUTH_CODES.has(parsed.code) && requireAuth && !retried) {
         this.log.warn(`API returned ${parsed.code} (${parsed.msg}) \u2014 re-authenticating`);
@@ -456,6 +499,15 @@ class HomgarClient {
           const chunks = [];
           res.on("data", (chunk) => chunks.push(chunk));
           res.on("end", () => {
+            if (res.statusCode === 403) {
+              resolve({
+                code: THROTTLE_CODE,
+                msg: "operate too frequently",
+                data: null,
+                ts: Date.now()
+              });
+              return;
+            }
             const data = Buffer.concat(chunks).toString("utf8");
             try {
               resolve(JSON.parse(data));

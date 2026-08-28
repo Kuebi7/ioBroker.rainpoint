@@ -82,10 +82,12 @@ export interface DecodedSensor {
 
 export class HomgarApiError extends Error {
     public readonly code: number;
+    public readonly retryAfterSeconds?: number;
 
-    public constructor(code: number, message: string) {
+    public constructor(code: number, message: string, retryAfterSeconds?: number) {
         super(`API error ${code}: ${message}`);
         this.name = 'HomgarApiError';
         this.code = code;
+        this.retryAfterSeconds = retryAfterSeconds;
     }
 }

@@ -64,7 +64,7 @@ cd ioBroker.rainpoint
 npm install
 npm run build
 npm pack
-iobroker install ./iobroker.rainpoint-0.1.0.tgz
+iobroker install ./iobroker.rainpoint-0.1.2.tgz
 iobroker add rainpoint
 ```
 
@@ -122,6 +122,14 @@ Zum Stoppen `zones.1.on` auf `false` setzen.
 - Unbekannte Modelle erscheinen, Werte können unvollständig sein
 - RainPoint-TY / Tuya bleibt außen vor
 
+## Fehler 9993 (operate too frequently)
+
+Die Cloud sperrt Logins, wenn zu oft angemeldet wird (Adapter-Neustarts, falsches Passwort, App und Adapter gleichzeitig). **Instanz nicht neu starten.** Nach ein paar Minuten versucht der Adapter den Login selbst erneut. Wenn die Sperre weiter gilt, 5 Minuten warten und erst dann die Instanz starten.
+
+## Fehler 2001 (Wrong account or password)
+
+Passwort in den Einstellungen neu eingeben, Ländervorwahl des Kontos (nicht die Telefonnummer) setzen und RainPoint Home / HomGar verwenden — nicht RainPoint-TY.
+
 ## Entwicklung
 
 ```bash
@@ -138,6 +146,12 @@ API und Payload-Dekoder orientieren sich an:
 - [homgarapi](https://github.com/Remboooo/homgarapi)
 
 ## Changelog
+
+### 0.1.2
+
+- Cloud-Fehler 9993: 3 Minuten Pause statt sofortigem Neu-Login
+- Bei falschem Passwort (2001) 10 Minuten warten, statt die Cloud zu überlasten
+- Instanz während der Pause nicht neu starten
 
 ### 0.1.1
 
