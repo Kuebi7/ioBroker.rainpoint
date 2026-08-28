@@ -1,8 +1,12 @@
 {
     "common": {
         "name": "rainpoint",
-        "version": "0.1.0",
+        "version": "0.1.1",
         "news": {
+            "0.1.1": {
+                "en": "Fix cloud login: retry RainPoint and HomGar apps, use the same API host as Home Assistant, clearer error 2001 hints",
+                "de": "Login-Fix: RainPoint- und HomGar-App werden nacheinander versucht, gleicher API-Host wie Home Assistant, klarere Hinweise bei Fehler 2001"
+            },
             "0.1.0": {
                 "en": "Initial release: HomGar / RainPoint cloud login, device discovery, valve control and sensor polling",
                 "de": "Erstes Release: HomGar-/RainPoint-Cloud-Login, Geräteerkennung, Ventilsteuerung und Sensor-Polling"

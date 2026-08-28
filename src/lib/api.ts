@@ -1,12 +1,21 @@
 import crypto from 'node:crypto';
 import https from 'node:https';
-import type { ApiConfig, DeviceInfo, DeviceStatus, HomeInfo, ZoneStatus } from './types';
-import { HomgarApiError } from './types';
+import {
+    HomgarApiError,
+    type ApiConfig,
+    type AppType,
+    type DeviceInfo,
+    type DeviceStatus,
+    type HomeInfo,
+    type ZoneStatus,
+} from './types';
 import { decodeSensor, decodeValve } from './decoder';
 import { getDeviceKind, isValveKind, parseZoneNames } from './devices';
+import { appCodeForType, looksEncrypted, normalizeAreaCode, normalizeEmail, normalizePassword } from './credentials';
 
 const API_VERSION = '1.16.1065';
 const SCENE_TYPE = '1';
+const USER_AGENT = 'okhttp/4.9.3';
 const CONTROL_MODE_CLOSE = 0;
 const CONTROL_MODE_OPEN = 1;
 const REAUTH_CODES = new Set([1001, 1004]);
@@ -103,27 +112,68 @@ export class HomgarClient {
     private tokenExpired = 0;
     private hid = '';
     private readonly baseUrl: string;
-    private readonly appCode: string;
+    private appCode: string;
     private readonly deviceCache = new Map<string, DeviceInfo>();
 
     public constructor(
         private readonly config: ApiConfig,
         private readonly log: ioBroker.Logger,
     ) {
-        this.baseUrl = `https://region${config.region || '3'}.homgarus.com:1443`;
-        this.appCode = config.appType === 'homgar' ? '1' : '2';
+        this.baseUrl = `https://region${config.region || '3'}.homgarus.com`;
+        this.appCode = appCodeForType(config.appType);
     }
 
     public async login(): Promise<void> {
-        const areaCode = this.config.areaCode || '49';
-        const deviceId = md5(`${this.config.email}${areaCode}`);
+        const email = normalizeEmail(this.config.email);
+        const password = normalizePassword(this.config.password);
+        const areaCode = normalizeAreaCode(this.config.areaCode);
+        if (!email || !password) {
+            throw new Error('Email and password are required');
+        }
+        if (looksEncrypted(password)) {
+            throw new Error(
+                'Password still looks encrypted. Open the adapter settings, re-enter the password and save.',
+            );
+        }
+
+        const preferred: AppType = this.config.appType === 'homgar' ? 'homgar' : 'rainpoint';
+        const order: AppType[] = preferred === 'homgar' ? ['homgar', 'rainpoint'] : ['rainpoint', 'homgar'];
+
+        for (const appType of order) {
+            this.appCode = appCodeForType(appType);
+            try {
+                this.log.info(`Logging in as ${email} (areaCode=${areaCode}, app=${appType}, appCode=${this.appCode})`);
+                await this.loginOnce(email, password, areaCode);
+                if (appType !== preferred) {
+                    this.log.warn(
+                        `Login succeeded with ${appType} instead of configured ${preferred}. Keep using that app in the settings.`,
+                    );
+                }
+                return;
+            } catch (error) {
+                if (error instanceof HomgarApiError && error.code === 2001) {
+                    this.log.warn(`Login rejected for ${appType} (appCode ${this.appCode}): ${error.message}`);
+                    continue;
+                }
+                throw error;
+            }
+        }
+
+        throw new HomgarApiError(
+            2001,
+            'Wrong account or password. Check email/password, the country calling code used when the account was created, and that this is RainPoint Home or HomGar — not RainPoint-TY/Tuya.',
+        );
+    }
+
+    private async loginOnce(email: string, password: string, areaCode: string): Promise<void> {
+        const deviceId = md5(`${email}${areaCode}`);
         const response = await this.request<LoginData>(
             'POST',
             '/auth/basic/app/login',
             {
                 areaCode,
-                phoneOrEmail: this.config.email,
-                password: md5(this.config.password),
+                phoneOrEmail: email,
+                password: md5(password),
                 deviceId,
             },
             false,
@@ -131,7 +181,7 @@ export class HomgarClient {
         this.token = response.data.token;
         this.refreshTokenValue = response.data.refreshToken;
         this.tokenExpired = response.ts + response.data.tokenExpired * 1000;
-        this.log.info(`Logged in to HomGar/RainPoint cloud as ${this.config.email}`);
+        this.log.info(`Logged in to HomGar/RainPoint cloud as ${email}`);
     }
 
     public setHome(homeId: string): void {
@@ -458,6 +508,7 @@ export class HomgarClient {
             version: API_VERSION,
             appCode: this.appCode,
             sceneType: SCENE_TYPE,
+            'User-Agent': USER_AGENT,
         };
         if (requireAuth && this.token) {
             headers.auth = this.token;

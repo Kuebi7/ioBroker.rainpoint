@@ -2,6 +2,7 @@
 import { expect } from 'chai';
 import { decodeSensor, decodeValve } from './decoder';
 import { fahrenheitTenthsToCelsius, getDeviceKind, parseZoneNames, sanitizeId } from './devices';
+import { looksEncrypted, normalizeAreaCode, normalizeEmail } from './credentials';
 
 describe('decoder', () => {
     it('decodes an ASCII two-zone valve payload', () => {
@@ -56,5 +57,15 @@ describe('devices', () => {
     it('parses zone names and sanitizes ids', () => {
         expect(parseZoneNames('Front|Back', 2)).to.deep.equal(['Front', 'Back']);
         expect(sanitizeId('abc/def')).to.equal('abc_def');
+    });
+});
+
+describe('credentials', () => {
+    it('normalizes email, area code and encrypted-password detection', () => {
+        expect(normalizeEmail('  Foo@Bar.DE ')).to.equal('foo@bar.de');
+        expect(normalizeAreaCode('+49')).to.equal('49');
+        expect(normalizeAreaCode('0049')).to.equal('49');
+        expect(looksEncrypted('$/aes-192-cbc:abc')).to.equal(true);
+        expect(looksEncrypted('secret')).to.equal(false);
     });
 });

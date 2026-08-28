@@ -31,10 +31,23 @@
             "lg": 4
         },
         "areaCode": {
-            "type": "text",
+            "type": "select",
             "label": "areaCode",
             "help": "areaCodeHelp",
             "default": "49",
+            "options": [
+                { "label": "Deutschland (49)", "value": "49" },
+                { "label": "Österreich (43)", "value": "43" },
+                { "label": "Schweiz (41)", "value": "41" },
+                { "label": "Niederlande (31)", "value": "31" },
+                { "label": "Belgien (32)", "value": "32" },
+                { "label": "Frankreich (33)", "value": "33" },
+                { "label": "Italien (39)", "value": "39" },
+                { "label": "Spanien (34)", "value": "34" },
+                { "label": "Polen (48)", "value": "48" },
+                { "label": "Großbritannien (44)", "value": "44" },
+                { "label": "USA / Kanada (1)", "value": "1" }
+            ],
             "xs": 12,
             "sm": 12,
             "md": 6,

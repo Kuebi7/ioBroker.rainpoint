@@ -3,7 +3,7 @@
     "sessionHint": "For the RainPoint app with a Wi-Fi gateway. The cloud allows only one active session per account. Create a second account and invite it as a home member so the phone app stays logged in.",
     "appType": "App",
     "areaCode": "Country calling code",
-    "areaCodeHelp": "Phone country code of the account, e.g. 49 for Germany, 43 for Austria, 41 for Switzerland, 1 for USA.",
+    "areaCodeHelp": "Country selected when the RainPoint account was created — not the phone number. A mismatch returns error 2001.",
     "region": "Cloud region",
     "email": "Email",
     "password": "Password",

@@ -1,6 +1,6 @@
 {
     "name": "iobroker.rainpoint",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "Control RainPoint / HomGar irrigation devices from ioBroker",
     "author": {
         "name": "Andreas"

@@ -3,7 +3,7 @@
     "sessionHint": "Für die RainPoint-App mit WLAN-Gateway. Die Cloud erlaubt nur eine aktive Sitzung pro Konto. Zweites Konto anlegen und als Mitglied ins Home einladen, damit die Handy-App eingeloggt bleibt.",
     "appType": "App",
     "areaCode": "Ländervorwahl",
-    "areaCodeHelp": "Telefon-Ländervorwahl des Kontos, z. B. 49 für Deutschland, 43 für Österreich, 41 für die Schweiz, 1 für die USA.",
+    "areaCodeHelp": "Land, das beim Anlegen des Kontos in der RainPoint-App gewählt wurde — nicht die Telefonnummer. Falsches Land ergibt Fehler 2001.",
     "region": "Cloud-Region",
     "email": "E-Mail",
     "password": "Passwort",

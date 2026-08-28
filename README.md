@@ -77,9 +77,11 @@ In der Instanz **rainpoint.0**:
 | Feld | Wert |
 |---|---|
 | App | **RainPoint (WLAN Gateway)** |
-| Ländervorwahl | z. B. `49` für Deutschland |
+| Ländervorwahl | Land beim Anlegen des Kontos in der App, z. B. `49` |
 | Cloud-Region | International |
 | E-Mail / Passwort | Zugangsdaten des Extra-Kontos |
+
+Fehler **2001** bedeutet fast immer: Passwort neu speichern, Ländervorwahl prüfen, oder die Handy-App ist **RainPoint-TY** statt RainPoint Home.
 | Home-Index | `0` = erstes Home |
 | Abfrageintervall | Standard 120 Sekunden |
 | Standard-Bewässerungsdauer | Minuten, wenn eine Zone eingeschaltet wird |
@@ -136,6 +138,12 @@ API und Payload-Dekoder orientieren sich an:
 - [homgarapi](https://github.com/Remboooo/homgarapi)
 
 ## Changelog
+
+### 0.1.1
+
+- Login versucht automatisch RainPoint und HomGar
+- Gleicher Cloud-Host wie die Home-Assistant-Integration
+- Klarere Hinweise bei Fehler 2001 (falsches Passwort, Land oder App)
 
 ### 0.1.0
 

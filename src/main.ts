@@ -44,7 +44,7 @@ class Rainpoint extends utils.Adapter {
             {
                 email: this.config.email,
                 password: this.config.password,
-                areaCode: String(this.config.areaCode || '49').replace(/^\+/, ''),
+                areaCode: String(this.config.areaCode || '49'),
                 region: String(this.config.region || '3'),
                 appType: this.config.appType === 'homgar' ? 'homgar' : 'rainpoint',
             },
@@ -70,6 +70,11 @@ class Rainpoint extends utils.Adapter {
             this.subscribeStates('devices.*');
         } catch (error) {
             this.log.error(`Startup failed: ${(error as Error).message}`);
+            if ((error as { code?: number }).code === 2001) {
+                this.log.error(
+                    'Tip: re-enter password, set the country code of the RainPoint account (not +49), and confirm the phone app is RainPoint Home/HomGar — not RainPoint-TY.',
+                );
+            }
             await this.setState('info.connection', false, true);
             this.schedulePoll(60);
         }
